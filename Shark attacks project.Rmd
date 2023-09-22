@@ -1,0 +1,702 @@
+---
+title: "Analysis of Shark Attacks in the USA from 1960 to 2018."
+author: "Yaakov Haiby"
+date: "2023-08-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r, echo = FALSE, results = 'hide', warning=FALSE, message=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(maps)
+library(mapproj)
+library(rworldmap)
+library(RColorBrewer)
+
+
+
+
+```
+
+
+### Shark Attack Frequencies Over the Years.
+
+```{r}
+path <- "/Users/yaakovhaiby/Downloads/attacks.csv"
+data <- read.csv(path)
+data <- filter(data, Country == "USA")
+```
+
+
+```{r}
+# Define the strings to filter
+strings_to_remove <- c("Questionable incident", "Shark involvement not confirmed", "No shark involvement","No shark invovlement - it ws a publicity stunt")
+
+# Filter out rows where the "Species" column contains any of the specified strings
+data <- data %>% filter(!(Species %in% strings_to_remove))
+
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+
+years_vec <- unlist(data$Year)
+years_table <- table(years_vec)
+years_table <- as.data.frame(years_table)
+years_table <- years_table %>% arrange(desc(years_table)) 
+
+
+# Convert the table to a data frame and rename the variable to Var1
+names(years_table)[1] <- "Var1"
+years_table$Var1 <- as.numeric(as.character(years_table$Var1))
+
+# Sort the data frame in ascending order based on the years
+years_table <- years_table %>% arrange(Var1)
+
+ggplot(years_table, aes(x = Var1, y = Freq)) +
+  geom_bar(stat = "identity", fill = "black", color = "white") +
+  geom_smooth(method = "loess", se = FALSE, color = "red", size = 1.5) +
+  labs(title = "Frequency of Years",
+       x = "Year",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_continuous(limits = c(1960, 2018), breaks = seq(1960, 2018, 10))
+
+```
+
+### Monthly Cumulative Case Counts Throughout the Year.
+
+```{r}
+# Function to keep only English letters in a string
+
+data1 <- data
+
+keep_english_letters <- function(text) {
+  gsub("[^A-Za-z]", "", text)
+}
+
+# Apply the function to the 'Date' column
+data1$Date <- lapply(data1$Date, keep_english_letters)
+
+# View the updated data1 frame
+
+# Assuming you have already read the CSV file into the 'data1' data1 frame
+
+# Filter out rows where the "Date" column has more than 3 letters
+data1 <- data1[nchar(data1$Date) <= 3, ]
+
+# View the updated data1 frame
+data1 <- data1 %>% arrange(Date)
+
+```
+
+
+```{r}
+
+# Assuming you have already read the CSV file into the 'data1' data1 frame
+
+# Create a vector with the three-letter shortcuts for months
+months_short <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+# Filter out rows where the "Date" column contains at least one of the elements in months_short
+data1 <- data1 %>% 
+  filter(!is.na(Date) & !Date %in% c("", "NA") & any(grepl(paste(months_short, collapse = "|"), Date)))
+
+```
+
+
+```{r}
+# Create a vector with the three-letter shortcuts for months
+months_short <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+# Filter out rows where the "Date" column does not contain any of the elements in months_short
+data1 <- data1 %>%
+  filter(grepl(paste(months_short, collapse = "|"), Date))
+
+# View the updated data1 frame
+
+data1 <- data1 %>% arrange(Date,Area)
+Months <-  unlist(data1$Date)
+
+element_counts <- table(Months)
+element_counts <- as.data.frame(element_counts)
+# Define the correct order of months
+month_order <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+# Convert the "Month" column to an ordered factor with specified levels
+element_counts$Month <- factor(element_counts$Month, levels = month_order, ordered = TRUE)
+
+
+# Create the plot using ggplot2
+ggplot(element_counts, aes(x = Month, y = Freq)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Number of comulative cases in each month 1960-2018 ",
+       x = "Month",
+       y = "Number of Cases") +
+  theme_minimal()
+```
+
+### Visualizing Cumulative Shark Attack Cases on a Map of the USA.
+
+
+```{r}
+data <- data %>% arrange(Area)
+
+
+States_vec <- unlist(data$Area)
+invisible(States_data <- table(States_vec))
+States_data <- as.data.frame(States_data)
+names(States_data)[2] <- "cumulative_attacks"
+States_data <- States_data %>% arrange(desc(States_data$`Cumulative attacks`))
+names(States_data)[1]<- "region"
+States_data$region <- as.character(States_data$region)
+
+# Assuming your data is named States_data and is already loaded
+
+# Convert any empty region names to NA
+States_data$region[States_data$region == ""] <- NA
+
+# Remove leading/trailing whitespace from region names
+States_data$region <- trimws(States_data$region)
+
+summarized_data <- States_data %>%
+  group_by(region) %>%
+  summarise(total_cumulative_attacks = sum(cumulative_attacks, na.rm = TRUE))
+summarized_data <- summarized_data %>%
+  filter(!is.na(region) & !is.na(total_cumulative_attacks))
+
+States_data <-summarized_data
+
+
+
+states <- map_data("state")
+attacks <- States_data
+
+# Assuming "cumulative_attacks" is the column with attack data
+names(attacks) <- tolower(names(attacks))
+attacks$region <- tolower(attacks$region)
+# Find missing countries
+attacks.geo <- merge(states, attacks, sort = FALSE, by = "region")
+attacks.geo <- attacks.geo[order(attacks.geo$order), ]
+
+# Find missing countries
+missing_countries <- setdiff(tolower(states$region), tolower(attacks$region))
+
+# Create a plot of missing countries in white
+plot_missing <- ggplot() +
+  geom_polygon(data = states[states$region %in% missing_countries, ],
+               aes(x = long, y = lat, group = group),
+               fill = "white", color = "gray") +
+  theme_void()
+
+# Combine the missing countries plot with attacks.geo
+final_plot <- plot_missing +
+  geom_polygon(data = attacks.geo,
+               aes(x = long, y = lat, group = group, fill = total_cumulative_attacks)) +
+  scale_fill_gradient(low = "lightgreen", high = "red", na.value = "white") +
+  coord_map()
+
+print(final_plot)
+
+
+
+
+
+
+```
+
+### Visualizing the Proportion of Cumulative Shark Attacks by Species in a Pie Chart.
+
+
+```{r,warning=FALSE}
+data2<- data
+
+data2$Species[grepl("white", data2$Species, ignore.case = TRUE)] <- "Great white shark"
+data2$Species[grepl("Tiger", data2$Species, ignore.case = TRUE)] <- "Tiger shark"
+data2$Species[grepl("Bull", data2$Species, ignore.case = TRUE)] <- "Bull shark"
+data2$Species[grepl("Nurse", data2$Species, ignore.case = TRUE)] <- "Nurse shark"
+data2$Species[grepl("Blacktip", data2$Species, ignore.case = TRUE)] <- "Blacktip shark"
+data2$Species[grepl("Mako", data2$Species, ignore.case = TRUE)] <- "Mako shark"
+data2$Species[grepl("hammerhead", data2$Species, ignore.case = TRUE)] <- "Hammerhead shark"
+data2$Species[grepl("Spinner", data2$Species, ignore.case = TRUE)] <- "Spinner shark"
+data2$Species[grepl("Leopard", data2$Species, ignore.case = TRUE)] <- "Leopard shark"
+data2$Species[grepl("Sandbar", data2$Species, ignore.case = TRUE)] <- "Sandbar shark"
+data2$Species[grepl("Sevengill", data2$Species, ignore.case = TRUE)] <- "Sevengill shark"
+data2$Species[grepl("Shovelnose", data2$Species, ignore.case = TRUE)] <- "Shovelnose shark"
+data2$Species[grepl("sand shark", data2$Species, ignore.case = TRUE)] <- "sand shark"
+data2$Species[grepl("Lemon", data2$Species, ignore.case = TRUE)] <- "Lemon shark"
+data2$Species[grepl("Blue", data2$Species, ignore.case = TRUE)] <- "Blue shark"
+data2$Species[grepl("Silky", data2$Species, ignore.case = TRUE)] <- "Silky shark"
+data2$Species[grepl("Reef", data2$Species, ignore.case = TRUE)] <- "Reef shark"
+data2$Species[grepl("Salmon", data2$Species, ignore.case = TRUE)] <- "Salmon shark"
+
+```
+
+
+
+```{r}
+shark_species <- c("Great white shark", "Tiger shark", "Bull shark", "Nurse shark",
+                   "Blacktip shark", "Mako shark", "Hammerhead shark", "Spinner shark",
+                   "Leopard shark", "Sandbar shark", "Sevengill shark", "Shovelnose shark",
+                   "sand shark", "Lemon shark", "Blue shark", "Silky shark", "Reef shark","Salmon shark")
+
+```
+
+
+```{r}
+# Convert the data2$Species vector to lowercase for case-insensitive comparison
+data2$Species <- iconv(na.omit(data2$Species), to = "ASCII//TRANSLIT")
+data2$Species <- tolower(data2$Species)
+# Function to check if any substring from shark_species is present in the input string
+check_substring <- function(x) {
+  any(grepl(paste(shark_species, collapse = "|"), x, ignore.case = TRUE))
+}
+
+# Apply the check_substring function to each row of the "Species" column
+keep_rows <- apply(data2, 1, function(row) check_substring(row["Species"]))
+
+# Subset the data frame to keep only the rows with at least one valid substring
+data2 <- data2[keep_rows, ]
+
+# If needed, convert the data2$Species back to title case (optional)
+data2$Species <- tools::toTitleCase(data2$Species)
+
+```
+
+
+```{r}
+shark_vec <- unlist(data2$Species)
+invisible(shark_table <- table(shark_vec))
+shark_table <- as.data.frame(shark_table)
+shark_table <- shark_table %>% arrange(desc(Freq)) 
+
+
+```
+
+
+
+```{r}
+# Assuming you have a data frame named shark_table with columns "shark_vec" and "Freq"
+
+# Create a copy of the shark_table data frame
+shark_table_modified <- shark_table
+
+# Create a pie chart with different colors for each species
+ggplot(shark_table_modified, aes(x = "", y = Freq, fill = shark_vec)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  scale_fill_discrete() +  # Use different colors for each species
+  labs(title = "Proportion of Cumulative Attacks from Specific Shark Species",
+       x = NULL,
+       y = NULL,
+       fill = "Shark Species") +
+  theme_void() +
+  theme(legend.position = "right")
+
+```
+
+### Highlighting the Predominant Shark Species Responsible for Attacks in Each Region.
+
+
+
+
+
+
+```{r}
+
+# Assuming you have a data frame named data2 with columns "Area" and "Species"
+
+# Calculate the most frequently occurring attacking shark species for each area
+most_common_attacker <- data2 %>%
+  group_by(Area, Species) %>%
+  summarize(Frequency = n(), .groups = 'drop') %>%
+  arrange(Area, desc(Frequency)) %>%
+  group_by(Area) %>%
+  slice(1) %>%
+  ungroup()
+
+# Custom color palette with more colors
+species_colors <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854",
+                    "#ffd92f", "#e5c494", "#b3b3b3", "#1f78b4", "#33a02c",
+                    "#984ea3", "#ff7f00", "#cab2d6", "#6a3d9a", "#fb9a99",
+                    "#fdbf6f", "#b15928", "#ffff99")
+
+# Create a bar plot showing the most common attacking shark species for each area
+ggplot(data = most_common_attacker, aes(x = Area, y = Frequency, fill = Species)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = species_colors) +
+  labs(title = "Most Common Attacking Shark Species in Each Area",
+       x = "Area",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+
+### Displaying the Incidence of Shark Species Attacks in Florida.
+
+
+```{r}
+#who is the shark that attacks the most in Florida?
+library(ggplot2)
+library(dplyr)
+
+# Assuming you have a data frame named data2 with columns "Area" and "Species"
+
+data3 <- data2 %>% filter(Area == "Florida")
+shark_vec2 <- unlist(data3$Species)
+shark_table2 <- table(shark_vec2)
+shark_table2 <- as.data.frame(shark_table2)
+shark_table2 <- shark_table2 %>%
+  arrange(desc(Freq))
+
+# Create a more visually appealing bar plot with a different color palette
+ggplot(shark_table2, aes(x = reorder(shark_vec2, -Freq), y = Freq, fill = shark_vec2)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Shark Species in Florida",
+       x = "Shark Species",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "none") +  # Hide the legend for individual bars
+  scale_fill_viridis_d(option = "D", begin = 0.3, end = 0.8)  # Use the Category20 color palette
+
+```
+
+### Displaying the Incidence of Shark Species Attacks in California.
+
+
+
+```{r}
+#who is the shark that attacks the most in California ?
+library(ggplot2)
+library(dplyr)
+
+# Assuming you have a data frame named data2 with columns "Area" and "Species"
+
+data4 <- data2 %>% filter(Area == "California")
+shark_vec3 <- unlist(data4$Species)
+shark_table3 <- table(shark_vec3)
+shark_table3 <- as.data.frame(shark_table3)
+shark_table3 <- shark_table3 %>%
+  arrange(desc(Freq))
+
+# Create a horizontal bar plot
+ggplot(shark_table3, aes(x = Freq, y = reorder(shark_vec3, Freq), fill = shark_vec3)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Frequency of Shark Species in California",
+       x = "Frequency",
+       y = "Shark Species") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(hjust = 0)) +
+  scale_fill_brewer(palette = "Set3")
+
+
+```
+
+### Analyzing the Frequency of Shark Attacks During Various Aquatic Recreational Activities.
+
+
+```{r,warning=FALSE,}
+
+data5 <-data
+
+data5 <- subset(data5, !is.na(Activity) & Activity != "")
+
+
+data5$Activity[grepl("Swimming", data5$Activity, ignore.case = TRUE)] <- "Swimming"
+data5$Activity[grepl("Kitesurfing", data5$Activity, ignore.case = TRUE)] <- "Surfing"
+data5$Activity[grepl("Boating", data5$Activity, ignore.case = TRUE)] <- "Boating"
+data5$Activity[grepl("Hunting", data5$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data5$Activity[grepl("Fishing", data5$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data5$Activity[grepl("Surfing", data5$Activity, ignore.case = TRUE)] <- "Surfing"
+data5$Activity[grepl("diving", data5$Activity, ignore.case = TRUE)] <- "Scuba diving"
+data5$Activity[grepl("Body boarding", data5$Activity, ignore.case = TRUE)] <- "Surfing"
+data5$Activity[grepl("Playing", data5$Activity, ignore.case = TRUE)] <- "Bathing"
+data5$Activity[grepl("bathing", data5$Activity, ignore.case = TRUE)] <- "Bathing"
+data5$Activity[grepl("Snorkeling", data5$Activity, ignore.case = TRUE)] <- "Scuba diving"
+data5$Activity[grepl("Wading", data5$Activity, ignore.case = TRUE)] <- "bathing"
+data5$Activity[grepl("Killing", data5$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data5$Activity[grepl("tagging", data5$Activity, ignore.case = TRUE)] <- "An attack during research"
+data5$Activity[grepl("Shooting", data5$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data5$Activity[grepl("paddling", data5$Activity, ignore.case = TRUE)] <- "Surfing"
+data5$Activity[grepl("Walking", data5$Activity, ignore.case = TRUE)] <- "Bathing"
+data5$Activity[grepl("Boat", data5$Activity, ignore.case = TRUE)] <- "Boating"
+
+vec <- c("Swimming","Surfing","Boating","Hunting or fishing","Scuba diving","bathing","An attack during research")
+data5$Activity <- ifelse(data5$Activity %in% vec, data5$Activity, "Other")
+
+unique_activities <- unique(data5$Activity)
+
+
+activity_vec <- unlist(data5$Activity)
+activity_table <- table(activity_vec)
+activity_table <- as.data.frame(activity_table)
+activity_table <- activity_table %>% arrange(desc(Freq))
+
+```
+
+
+
+
+```{r}
+# Assuming you have your own activity_table with columns "activity_vec" and "Freq"
+
+# Calculate percentages and cumulative percentages
+activity_table$fraction = activity_table$Freq / sum(activity_table$Freq)
+activity_table$ymax = cumsum(activity_table$fraction)
+activity_table$ymin = c(0, head(activity_table$ymax, n = -1))
+
+# Create the donut plot
+donut_plot <- ggplot(activity_table, aes(ymax = ymax, ymin = ymin, xmax = 4, xmin = 3, fill = activity_vec)) +
+  geom_rect() +
+  coord_polar(theta = "y") +
+  xlim(c(2, 4)) +
+  labs(title = "frequency of Shark Attacks during the activity ",
+       fill = "Activity",
+       caption = paste("Total:", sum(activity_table$Freq))) +
+  theme_void() +
+  theme(legend.position = "right")
+
+# Show the donut plot
+print(donut_plot)
+
+```
+
+### Illustrating the Frequency of Shark Species Attacks During Various Human Activities.
+
+
+
+
+
+```{r,warning=FALSE}
+data7 <- data2
+data7 <- subset(data7, !is.na(Activity) & Activity != "")
+
+
+data7$Activity[grepl("Swimming", data7$Activity, ignore.case = TRUE)] <- "Swimming"
+data7$Activity[grepl("Kitesurfing", data7$Activity, ignore.case = TRUE)] <- "Surfing"
+data7$Activity[grepl("Boating", data7$Activity, ignore.case = TRUE)] <- "Boating"
+data7$Activity[grepl("Hunting", data7$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data7$Activity[grepl("Fishing", data7$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data7$Activity[grepl("Surfing", data7$Activity, ignore.case = TRUE)] <- "Surfing"
+data7$Activity[grepl("diving", data7$Activity, ignore.case = TRUE)] <- "Scuba diving"
+data7$Activity[grepl("Body boarding", data7$Activity, ignore.case = TRUE)] <- "Surfing"
+data7$Activity[grepl("Playing", data7$Activity, ignore.case = TRUE)] <- "Bathing"
+data7$Activity[grepl("bathing", data7$Activity, ignore.case = TRUE)] <- "Bathing"
+data7$Activity[grepl("Snorkeling", data7$Activity, ignore.case = TRUE)] <- "Scuba diving"
+data7$Activity[grepl("Wading", data7$Activity, ignore.case = TRUE)] <- "bathing"
+data7$Activity[grepl("Killing", data7$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data7$Activity[grepl("tagging", data7$Activity, ignore.case = TRUE)] <- "An attack during research"
+data7$Activity[grepl("Shooting", data7$Activity, ignore.case = TRUE)] <- "Hunting or fishing"
+data7$Activity[grepl("paddling", data7$Activity, ignore.case = TRUE)] <- "Surfing"
+data7$Activity[grepl("Walking", data7$Activity, ignore.case = TRUE)] <- "Bathing"
+data7$Activity[grepl("Boat", data7$Activity, ignore.case = TRUE)] <- "Boating"
+
+vec <- c("Swimming","Surfing","Boating","Hunting or fishing","Scuba diving","bathing","An attack during research")
+data7$Activity <- ifelse(data7$Activity %in% vec, data7$Activity, "Other")
+
+```
+
+
+
+```{r,warning=FALSE}
+
+# Assuming you have a data frame named data7 with columns "Activity" and "Species"
+
+# Calculate the frequency of each shark species for each activity
+species_activity_freq <- data7 %>%
+  group_by(Activity, Species) %>%
+  summarize(Frequency = n(), .groups = 'drop') %>%
+  ungroup()
+
+# Create a color palette for distinct species
+color_palette <- scales::hue_pal()(length(unique(species_activity_freq$Species)))
+
+# Create a bar plot showing the frequency of shark species for each activity
+ggplot(data = species_activity_freq, aes(x = Activity, y = Frequency, fill = Species)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Shark Species Frequency for Each Activity",
+       x = "Activity",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_manual(values = color_palette)
+
+
+```
+
+
+
+### Attacks Frequency by Daytime.
+
+
+```{r,warning=FALSE,message=FALSE,error=FALSE}
+# Assuming your data frame is named 'data'
+shark_attacks_df <- subset(data, !is.na(Time))
+
+shark_attacks_df <- shark_attacks_df %>%
+  mutate(Time_Category = case_when(
+    is.na(Time) | Time == "" | !grepl("^\\d\\d[hH]\\d\\d$", Time) ~ Time,
+    between(as.numeric(substr(Time, 1, 2)), 5, 11) ~ "morning",
+    between(as.numeric(substr(Time, 1, 2)), 12, 15) ~ "noon",
+    between(as.numeric(substr(Time, 1, 2)), 16, 18) ~ "afternoon",
+    between(as.numeric(substr(Time, 1, 2)), 19, 23) ~ "evening",
+    TRUE ~ "night"
+  ))
+
+
+# Modify specific values in the Time_Category column
+shark_attacks_df <- shark_attacks_df %>%
+  mutate(Time_Category = case_when(
+    Time_Category %in% c(
+      "10h45-11h15", "07h00 - 08h00", "Morning", "Early Morning",
+      "10h00 / 11h00", "08h00 / 09h30", "Morning ", "Just before noon",
+      "11h115", "Early morning", "Sunset", "8:04 pm", "Mid morning",
+      "Prior to 10h37", "Daybreak", "Mid-morning", "\"Just before 11h00\"",
+      ">06h45", "<07h30", "09h30 ", "11h30 ", "Shortly before 13h00",
+      "09h30 / 10h00", "Between 05h00 and 08h00", "   ",
+      " 14h00", "\"After lunch\"", "12h45 / 13h45", "1300", "15j45",
+      "Noon", "14h00  -15h00", "13h345", "14h00 - 15h00", "15h00j",
+      "14h30 / 15h30"
+    ) ~ "morning",
+    Time_Category %in% c(" 14h00", "\"After lunch\"", "12h45 / 13h45",
+                         "1300", "15j45", "Noon", "14h00  -15h00",
+                         "13h345", "14h00 - 15h00", "15h00j") ~ "noon",
+    Time_Category %in% c("After noon", "Early afternoon", "1600",
+                         "18h30?", "Late afternon", "Late Afternoon",
+                         "18h15-18h30", "Afternoon") ~ "afternoon",
+    Time_Category %in% c("Evening", "Dusk", "Late afternoon",
+                         "Just before sundown") ~ "evening",
+    Time_Category %in% c("Night", "03h45 - 04h00", "Shortly after midnight",
+                         "\"Night\"", "Midnight") ~ "night",
+    TRUE ~ Time_Category
+  )) %>%
+  filter(!Time_Category %in% c("09h30 / 15h30", "10h30 or 13h30", 
+                               "10h00 or 14h00", " ", "--", "P.M.", "X", "A.M.",
+                               "Possibly same incident as 2000.08.21", ""))
+
+day_vec <- unlist(shark_attacks_df$Time_Category)
+invisible(day_table <- table(day_vec))
+day_table <- as.data.frame(day_table)
+day_table <- day_table %>% arrange(desc(Freq))
+```
+
+
+```{r,warning=FALSE,message=FALSE,error=FALSE}
+
+# Define the desired order of 'day_vec' levels
+desired_order <- c("morning", "noon", "afternoon", "evening", "night")
+
+# Reorder the levels of 'day_vec' factor
+day_table$day_vec <- factor(day_table$day_vec, levels = desired_order)
+
+# Define your custom color palette
+color_palette <- c("morning" = "blue", "noon" = "green", "afternoon" = "orange", "evening" = "purple", "night" = "black")
+
+# Create a lollipop plot using ggplot
+ggplot(day_table, aes(x = day_vec, y = Freq)) +
+  geom_segment(aes(xend = day_vec, yend = 0), color = "gray") +
+  geom_point(aes(color = day_vec), size = 3, position = position_dodge(width = 0.5)) +
+  scale_color_manual(values = color_palette) +
+  labs(title = "Attacks Frequency by Daytime",
+       x = "Daytime",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+```
+
+
+
+### Fatal shark attacks:
+
+#### Based on the data, what is the likelihood of a fatal shark attack?
+
+
+```{r}
+# Assuming your data frame is named 'shark_attacks_df'
+# Replace this with the actual name of your data frame
+
+# Step 1: Count the number of fatal attacks
+fatal_attacks_count <- sum(data$Fatal..Y.N. == "Y")
+
+# Step 2: Count the total number of attacks
+total_attacks_count <- nrow(data)
+
+# Step 3: Calculate the empirical probability of getting killed
+empirical_probability <- fatal_attacks_count / total_attacks_count
+
+empirical_probability <- round(empirical_probability,3)
+
+print(paste("Empirical Probability of Getting Killed by a Shark:", empirical_probability))
+
+```
+
+
+#### Empirical Probability of Fatal Shark Attacks by Species.
+
+
+```{r}
+# Assuming your data frame is named data2
+
+# Calculate empirical probabilities for all shark species
+species_probabilities <- data2 %>%
+  group_by(Species) %>%
+  summarize(empirical_probability = sum(Fatal..Y.N. == "Y") / n())
+
+# Create a bar plot
+ggplot(species_probabilities, aes(x = reorder(Species, -empirical_probability), y = empirical_probability)) +
+  geom_bar(stat = "identity", fill = "dodgerblue") +
+  theme_minimal() +
+  coord_flip() +
+  labs(x = "Shark Species", y = "Empirical Probability of Fatal Attacks",
+       title = "Empirical Probability of Fatal Attacks by Shark Species")
+
+```
+
+
+
+#### Fatalities from Shark Attacks Over the Years.
+
+
+
+
+
+```{r}
+data9<-data
+filtered_data <- data9[data9$Fatal..Y.N. == "Y", ]
+filtered_data <- filtered_data[filtered_data$Year >= 1960 & filtered_data$Fatal..Y.N. == "Y",]
+year_counts <- filtered_data %>%
+  group_by(Year) %>%
+  summarize(Count = n())
+# Create a bar plot with a built-in color scale
+ggplot(year_counts, aes(x = factor(Year), y = Count, fill = factor(Year))) +
+  geom_bar(stat = "identity") +
+  labs(title = "Occurrences of Each Year",
+       x = "Year",
+       y = "Count") +
+  scale_fill_viridis_d() +  # Use a built-in color scale
+  theme_minimal() +
+  scale_x_discrete(breaks = unique(year_counts$Year[seq(1, nrow(year_counts), by = 2)]))
+
+```
+
+
+
+
+
+
+
