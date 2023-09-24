@@ -25,6 +25,7 @@ library(RColorBrewer)
 
 
 ```
+<br>**A link to the data source :** "https://www.kaggle.com/datasets/teajay/global-shark-attacks"
 
 
 ### Shark Attack Frequencies Over the Years.
@@ -33,9 +34,13 @@ library(RColorBrewer)
 path <- "/Users/yaakovhaiby/Downloads/attacks.csv"
 data <- read.csv(path)
 data <- filter(data, Country == "USA")
+data <- filter(data,Year>=1960)
 ```
 
 
+<br>**code explanation :**
+
+We delete the cases where the attack was questionable from the data, as we are interested in only those cases where the attack was definitively caused by a shark.
 ```{r}
 # Define the strings to filter
 strings_to_remove <- c("Questionable incident", "Shark involvement not confirmed", "No shark involvement","No shark invovlement - it ws a publicity stunt")
