@@ -219,8 +219,7 @@ print(final_plot)
 
 ```
 
-### Visualizing the Proportion of Cumulative Shark Attacks by Species in a Pie Chart.
-
+### Pie Chart: Proportion of Cumulative Shark Attacks by Species Among the Top 7 Most Attacked Shark Species.
 
 ```{r,warning=FALSE}
 data2<- data
@@ -290,22 +289,54 @@ shark_table <- shark_table %>% arrange(desc(Freq))
 
 
 ```{r}
-# Assuming you have a data frame named shark_table with columns "shark_vec" and "Freq"
-
 # Create a copy of the shark_table data frame
 shark_table_modified <- shark_table
 
+# Calculate the percentages
+shark_table_modified$percentage <- (shark_table_modified$Freq / sum(shark_table_modified$Freq)) * 100
+
+# Sort the data frame by percentage in descending order
+shark_table_modified <- shark_table_modified[order(-shark_table_modified$percentage), ]
+
 # Create a pie chart with different colors for each species
-ggplot(shark_table_modified, aes(x = "", y = Freq, fill = shark_vec)) +
+p <- ggplot(shark_table_modified, aes(x = "", y = Freq, fill = shark_vec)) +
   geom_bar(stat = "identity", width = 1, color = "white") +
   coord_polar(theta = "y") +
   scale_fill_discrete() +  # Use different colors for each species
-  labs(title = "Proportion of Cumulative Attacks from Specific Shark Species",
+  labs(title = "Proportion of Cumulative Attacks from All Shark Species",
        x = NULL,
        y = NULL,
        fill = "Shark Species") +
   theme_void() +
   theme(legend.position = "right")
+
+# Calculate the threshold for the top 7
+threshold <- shark_table_modified$percentage[7]
+
+# Add percentages as labels only for the top 7 species, and combine the rest as "Other"
+shark_table_modified$shark_vec <- ifelse(shark_table_modified$percentage >= threshold,
+                                         as.character(shark_table_modified$shark_vec),
+                                         "Other")
+
+# Recreate the pie chart with modified labels
+p <- ggplot(shark_table_modified, aes(x = "", y = Freq, fill = shark_vec)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  scale_fill_discrete() +
+  labs(title = "Proportion of Cumulative Attacks from top 7 Most Attacked Shark Species",
+       x = NULL,
+       y = NULL,
+       fill = "Shark Species") +
+  geom_text(aes(label = ifelse(shark_vec == "Other", "", paste(round(percentage, 1), "%"))),
+            position = position_stack(vjust = 0.5)) +
+  theme_void() +
+  theme(legend.position = "right")
+
+# Print the updated pie chart
+print(p)
+
+
+
 
 ```
 
